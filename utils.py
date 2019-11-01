@@ -16,7 +16,7 @@ def encode_onehot(labels):
     return labels_onehot
 
 
-def load_cora_data(break_portion,path="../data/cora/", dataset="cora"):
+def load_cora_data(break_portion,path="./data/cora/", dataset="cora"):
     """Load Cora network, generate training, validation and test set for link prediction task"""
     print('Loading {} dataset...'.format(dataset))
     
