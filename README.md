@@ -6,7 +6,7 @@ Byproducts of Link Prediction via Graph Attention Network
 ### Basic Usage
 
 #### Example
-To run *# Byproducts of Link Prediction via Graph Attention Network* on the Cora citation network, execute the following command from the project home directory:<br/>
+To run *Byproducts of Link Prediction via Graph Attention Network* on the Cora citation network, execute the following command from the project home directory:<br/>
 	``python2.7 train.py 
 
 #### Options
