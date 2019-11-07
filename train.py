@@ -27,7 +27,7 @@ from tensorboardX import SummaryWriter
 from sklearn.metrics import roc_auc_score
 # Training settings
 parser = argparse.ArgumentParser()
-parser.add_argument('--backenCuda', action='store_false', default=True,
+parser.add_argument('--cuda', action='store_false', default=True,
                     help='Disables CUDA training.')
 parser.add_argument('--fastmode', action='store_true', default=False,
                     help='Validate during training pass.')
