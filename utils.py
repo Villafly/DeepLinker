@@ -16,7 +16,7 @@ def encode_onehot(labels):
     return labels_onehot
 
 
-def load_cora_data(break_portion,path="./data/cora/", dataset="cora"):
+def load_cora_data(break_portion,path="../data/cora/", dataset="cora"):
     """Load Cora network, generate training, validation and test set for link prediction task"""
     print('Loading {} dataset...'.format(dataset))
     
@@ -35,6 +35,7 @@ def load_cora_data(break_portion,path="./data/cora/", dataset="cora"):
                         shape=(features.shape[0], features.shape[0]),
                         dtype=np.float32)
     adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
+
     ori_adj = copy.deepcopy(adj.todense())   
     features = np.array(features.todense())  
     
@@ -42,7 +43,9 @@ def load_cora_data(break_portion,path="./data/cora/", dataset="cora"):
     train_adj,idx_test_positive = break_links(adj.todense(),break_portion)
     idx_train = negative_sampling(train_adj,idx_test_positive) 
     idx_test = test_negative_sampling(ori_adj,idx_test_positive,idx_train)
-    idx_train, idx_val = train_test_split(idx_train,test_size=0.05, random_state=1)    
+    idx_train, idx_val = train_test_split(idx_train,test_size=0.05, random_state=1)  
+    
+      
     
     return torch.FloatTensor(ori_adj), torch.FloatTensor(train_adj), torch.FloatTensor(features), torch.LongTensor(idx_train), torch.LongTensor(idx_val), torch.LongTensor(idx_test)
 
@@ -117,7 +120,3 @@ def score_f1(output, labels):
     pred = preds.cpu().data.numpy()
     score = f1_score(label,pred,average='micro')
     return score
-    
-
-
-
