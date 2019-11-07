@@ -1,7 +1,7 @@
 # Byproducts of Link Prediction via Graph Attention Network
 
 This repository provides a reference implementation of the following paper:
-# Byproducts of Link Prediction via Graph Attention Network
+Byproducts of Link Prediction via Graph Attention Network
 
 ### Basic Usage
 
