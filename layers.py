@@ -8,6 +8,7 @@ Created on Sat Apr 21 16:27:02 2018
 import math
 
 import torch
+import numpy as np
 from torch.nn.parameter import Parameter
 from torch.nn.modules.module import Module
 import torch.nn.functional as F
@@ -20,14 +21,14 @@ class LogisticRegression(torch.nn.Module):
         self.n_feature = n_feature
         self.parameter = torch.nn.Linear(n_feature, n_hidden) # hidden layer  
         self.active = nn.Sigmoid() ####  # output layer  
-    def forward(self,node_features):
-        node_num = node_features.size()[0]
-        odd_nodes = Variable(torch.LongTensor(range(node_num)[1::2]).cuda())
-        even_nodes = Variable(torch.LongTensor(range(node_num)[::2]).cuda())
-        edge_features = torch.mul(torch.index_select(node_features,0,odd_nodes),torch.index_select(node_features,0,even_nodes))
-        values = self.parameter(edge_features)
-        probs = self.active(values)
-        return probs.squeeze()
+    def forward(self,x):
+        node_num, out_features = x.size()
+        even_tensor = Variable(torch.LongTensor(range(node_num)[1::2]).cuda())
+        odd_tensor = Variable(torch.LongTensor(range(node_num)[::2]).cuda())
+        properity = torch.mul(torch.index_select(x,0,odd_tensor),torch.index_select(x,0,even_tensor))
+        value = self.parameter(properity)
+        out = self.active(value)
+        return out.squeeze()
         
 
 class GraphConvolution(Module):
@@ -67,7 +68,7 @@ class GraphConvolution(Module):
         alpha = F.softmax(dense.view(-1,self.sample_size), dim = 1)
         dense = alpha.view(-1,1)
         combination_slices =  dense.repeat(1,self.out_features)
-        return combination_slices
+        return alpha,combination_slices
     
     def cal_node_feature(self,adj_alpha,tail_support):
         unsum_feature = torch.mul(adj_alpha,tail_support)
@@ -82,13 +83,10 @@ class GraphConvolution(Module):
         for k in range(self.K):
             head_support = torch.mm(input_head, self.weight[k])
             tail_support = torch.mm(input_tail, self.weight[k])
-            alpha_matrix = self.cal_alpha_matrix(k,head_support,tail_support)
+            alpha,alpha_matrix = self.cal_alpha_matrix(k,head_support,tail_support)
             x,y =  alpha_matrix.size()
-            alpha_matrix_extra = Variable((torch.ones(x,y)).cuda())
-            #alpha_matrix = alpha_matrix + alpha_matrix_extra
+            alpha_matrix_extra = Variable((torch.ones(x,y)).cuda())            
             alpha_matrix = alpha_matrix_extra
-#            print adj_alpha,tail_support
-#            print adj_alpha,tail_support
             node_features = self.cal_node_feature(alpha_matrix,tail_support)
             if self.cat == 'True': 
                  _x = F.relu(node_features)
@@ -99,4 +97,9 @@ class GraphConvolution(Module):
             
             else:
                 output = node_features
+                return output
         return output
+    def __repr__(self):
+        return self.__class__.__name__ + ' (' \
+               + str(self.in_features) + ' -> ' \
+               + str(self.out_features) + ')'
