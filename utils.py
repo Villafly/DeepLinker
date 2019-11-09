@@ -14,7 +14,40 @@ def encode_onehot(labels):
     labels_onehot = np.array(list(map(classes_dict.get, labels)),
                              dtype=np.int32)
     return labels_onehot
-
+def load_pubmed_data(path="./data/pubmed/", dataset="pubmed"):
+    names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
+    objects = []
+    for i in range(len(names)):
+        with open("{}/ind.{}.{}".format(path,dataset, names[i]), 'rb') as f:
+            if sys.version_info > (3, 0):
+                objects.append(pickle.load(f, encoding='latin1'))
+            else:
+                objects.append(pickle.load(f))
+    x, y, tx, ty, allx, ally, graph = tuple(objects)
+    test_idx_reorder = parse_index_file("{}/ind.{}.test.index".format(path,dataset))
+    test_idx_range = np.sort(test_idx_reorder)
+    features = sp.vstack((allx, tx)).tolil()
+    features[test_idx_reorder, :] = features[test_idx_range, :]
+    features = features.todense()
+    adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
+    adj = adj.todense()
+    #adj = adj[:800,:800]
+    #features = features[:800,]
+    adj = (adj>0)*1
+    labels = np.vstack((ally, ty))
+    labels[test_idx_reorder, :] = labels[test_idx_range, :]
+    temp_ori_adj = copy.deepcopy(adj)
+    ori_adj = (adj)
+    features = (np.array(features))
+    adj,idx_test_list_positive = random_breakLink(adj)
+    print('random_break finished')
+    idx_train_noTensor = negative_sampling(adj,idx_test_list_positive)
+    train_num = len(idx_train_noTensor)
+    idx_train = (idx_train_noTensor[0:int(np.floor(train_num))])
+    idx_val = (idx_train_noTensor[int(np.floor(train_num*0.9)):])
+    idx_test_list = test_negative_sampling(temp_ori_adj,idx_test_list_positive,idx_train_noTensor)
+    idx_test = idx_test_list
+    return torch.FloatTensor(ori_adj), torch.FloatTensor(adj), torch.FloatTensor(features), torch.LongTensor(idx_train), torch.LongTensor(idx_val), torch.LongTensor(idx_test)
 
 def load_cora_data(break_portion,path="./data/cora/", dataset="cora"):
     """Load Cora network, generate training, validation and test set for link prediction task"""
@@ -43,9 +76,8 @@ def load_cora_data(break_portion,path="./data/cora/", dataset="cora"):
     train_adj,idx_test_positive = break_links(adj.todense(),break_portion)
     idx_train = negative_sampling(train_adj,idx_test_positive) 
     idx_test = test_negative_sampling(ori_adj,idx_test_positive,idx_train)
-    idx_train, idx_val = train_test_split(idx_train,test_size=0.05, random_state=1)  
+    idx_train, idx_val = train_test_split(idx_train,test_size=0.05, random_state=1)   
     
-      
     
     return torch.FloatTensor(ori_adj), torch.FloatTensor(train_adj), torch.FloatTensor(features), torch.LongTensor(idx_train), torch.LongTensor(idx_val), torch.LongTensor(idx_test)
 
