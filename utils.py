@@ -14,7 +14,7 @@ def encode_onehot(labels):
     labels_onehot = np.array(list(map(classes_dict.get, labels)),
                              dtype=np.int32)
     return labels_onehot
-def load_pubmed_data(path="./data/pubmed/", dataset="pubmed"):
+def load_pubmed_data(breakPortion,path="./data/pubmed/", dataset="pubmed"):
     names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
     objects = []
     for i in range(len(names)):
