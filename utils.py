@@ -4,6 +4,9 @@ import torch
 import random
 import copy
 import math
+import sys
+import cPickle as pickle
+import networkx as nx
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_curve,auc,f1_score,roc_auc_score
@@ -14,7 +17,15 @@ def encode_onehot(labels):
     labels_onehot = np.array(list(map(classes_dict.get, labels)),
                              dtype=np.int32)
     return labels_onehot
-def load_pubmed_data(breakPortion,path="../data/pubmed/", dataset="pubmed"):
+    
+def parse_index_file(filename):
+    """Parse index file."""
+    index = []
+    for line in open(filename):
+        index.append(int(line.strip()))
+    return index
+    
+def load_pubmed_data(break_portion,path="./data/pubmed/", dataset="pubmed"):
     names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
     objects = []
     for i in range(len(names)):
@@ -39,22 +50,13 @@ def load_pubmed_data(breakPortion,path="../data/pubmed/", dataset="pubmed"):
     temp_ori_adj = copy.deepcopy(adj)
     ori_adj = (adj)
     features = (np.array(features))
-    adj,idx_test_list_positive = random_breakLink(adj,breakPortion)     
-    idx_train_noTensor = negative_sampling(adj,idx_test_list_positive)    
-    train_num = len(idx_train_noTensor)
-    split_point = int(math.floor(train_num * 0.95))
-    if divmod(split_point, 2)[1] != 0:
-        split_point += 1
-    idx_train = torch.LongTensor(idx_train_noTensor[0:split_point])
-    idx_val = torch.LongTensor(idx_train_noTensor[split_point:])
-    idx_test_list = test_negative_sampling(ori_adj,idx_test_list_positive,idx_train_noTensor)
-    idx_test = torch.LongTensor(idx_test_list)
-
-    ori_adj = torch.FloatTensor(ori_adj)   
-    features = torch.FloatTensor(features) 
-    adj = torch.FloatTensor(adj)
+   #generate train,validation and test set 
+    train_adj,idx_test_positive = break_links(adj,break_portion)
+    idx_train = negative_sampling(train_adj,idx_test_positive) 
+    idx_test = test_negative_sampling(ori_adj,idx_test_positive,idx_train)
+    idx_train, idx_val = train_test_split(idx_train,test_size=0.05, random_state=1)       
     
-    return ori_adj, adj, features, labels, idx_train, idx_val, idx_test
+    return torch.FloatTensor(ori_adj), torch.FloatTensor(train_adj), torch.FloatTensor(features), torch.LongTensor(idx_train), torch.LongTensor(idx_val), torch.LongTensor(idx_test)
 
 def load_cora_data(break_portion,path="./data/cora/", dataset="cora"):
     """Load Cora network, generate training, validation and test set for link prediction task"""
