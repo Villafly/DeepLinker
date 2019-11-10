@@ -12,10 +12,10 @@ import torch
 from torch.autograd import Variable
 
 class GAT(nn.Module):
-    def __init__(self,K,node_num, nfeat, nhid, nclass, sampleSize, dropout):
+    def __init__(self,K,node_num, nfeat, nhid, nclass, sampleSize, dropout,trainAttention):
         super(GAT, self).__init__()
-        self.gc1 = GraphConvolution(K, node_num, nfeat, nhid, sampleSize[1],'False','True')
-        self.gc2 = GraphConvolution(1, node_num, K*nhid, 14*nclass, sampleSize[0],'False','False')
+        self.gc1 = GraphConvolution(K, node_num, nfeat, nhid, sampleSize[1],'False','True',trainAttention)
+        self.gc2 = GraphConvolution(1, node_num, K*nhid, 14*nclass, sampleSize[0],'False','False',trainAttention)
         #self.gc3 = GraphConvolution(1, node_num, 4*7*nclass, 7*nclass, 'False','False')
         self.gc6 = LogisticRegression(14*nclass,1)
         self.dropout = dropout
