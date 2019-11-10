@@ -32,11 +32,8 @@ class LogisticRegression(torch.nn.Module):
         
 
 class GraphConvolution(Module):
-    """
-    Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
-    """
 
-    def __init__(self,K,node_num, in_features, out_features, sample_size,bias='False',cat ='True',trainAttention=1):
+    def __init__(self,K,node_num, in_features, out_features, sample_size,bias='False',cat ='True',trainAttention='True'):
         super(GraphConvolution, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
