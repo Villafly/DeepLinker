@@ -1,240 +1,163 @@
-#  -*- coding: utf-8 -*-
-"""
-Created on Fri Apr 20 20:43:54 2018
-
-@author: wei
-"""
-
-from __future__ import division
-from __future__ import print_function
-import torch
-import time
-import os
-import glob
-import argparse
 import numpy as np
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.autograd import Variable
-from utils import *
-from models import GAT
+import scipy.sparse as sp
+import torch
+import random
+import copy
+import math
+import sys
 import cPickle as pickle
-#from load_karate import load_karate
-from sample import *
-from tensorboardX import SummaryWriter
+import networkx as nx
 
-from sklearn.metrics import roc_auc_score
-# Training settings
-parser = argparse.ArgumentParser()
-parser.add_argument('--cuda', action='store_false', default=True,
-                    help='Disables CUDA training.')
-parser.add_argument('--fastmode', action='store_true', default=False,
-                    help='Validate during training pass.')
-parser.add_argument('--seed', type=int, default=42, help='Random seed.')
-parser.add_argument('--epochs', type=int, default=100,
-                    help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default= 5e-4,
-                    help='Initial learning rate.')
-parser.add_argument('--weight_decay', type=float, default=5e-4,
-                    help='Weight decay (L2 loss on parameters).')
-parser.add_argument('--hidden', type=int, default=32,
-                    help='Number of hidden units.')
-parser.add_argument('--K', type=int, default=8,
-                    help='Number of attention.')
-parser.add_argument('--dropout', type=float, default=0.5,
-                    help='Dropout rate (1 - keep probability).')
-parser.add_argument('--batchSize', type = int, default=32,
-                    help='set the batchSize')
-parser.add_argument('--testBatchSize', type = int, default=32,
-                    help='set the batchSize for test dataset.')
-parser.add_argument('--sampleSize', type = str, default= '20,20',
-                    help='set the sampleSize.')
-parser.add_argument('--breakPortion', type = float, default= 0.1,
-                    help='set the break portion.')
-parser.add_argument('--patience', type = int, default=50, help='Patience')
-parser.add_argument('--trainAttention', action='store_true', default=True,
-                    help='Train attention weight or not')
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_curve,auc,f1_score,roc_auc_score
+def encode_onehot(labels):
+    classes = set(labels)
+    classes_dict = {c: np.identity(len(classes))[i, :] for i, c in
+                    enumerate(classes)}
+    labels_onehot = np.array(list(map(classes_dict.get, labels)),
+                             dtype=np.int32)
+    return labels_onehot
+    
+def parse_index_file(filename):
+    """Parse index file."""
+    index = []
+    for line in open(filename):
+        index.append(int(line.strip()))
+    return index
+    
+def load_pubmed_data(break_portion,path="./data/pubmed/", dataset="pubmed"):
+    names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
+    objects = []
+    for i in range(len(names)):
+        with open("{}/ind.{}.{}".format(path,dataset, names[i]), 'rb') as f:
+            if sys.version_info > (3, 0):
+                objects.append(pickle.load(f, encoding='latin1'))
+            else:
+                objects.append(pickle.load(f))
+    x, y, tx, ty, allx, ally, graph = tuple(objects)
+    test_idx_reorder = parse_index_file("{}/ind.{}.test.index".format(path,dataset))
+    test_idx_range = np.sort(test_idx_reorder)
+    features = sp.vstack((allx, tx)).tolil()
+    features[test_idx_reorder, :] = features[test_idx_range, :]
+    features = features.todense()
+    adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
+    adj = adj.todense()
+    #adj = adj[:800,:800]
+    #features = features[:800,]
+    adj = (adj>0)*1
+    labels = np.vstack((ally, ty))
+    labels[test_idx_reorder, :] = labels[test_idx_range, :]
+    temp_ori_adj = copy.deepcopy(adj)
+    ori_adj = (adj)
+    features = (np.array(features))
+   #generate train,validation and test set 
+    train_adj,idx_test_positive = break_links(adj,break_portion)
+    idx_train = negative_sampling(train_adj,idx_test_positive) 
+    idx_test = test_negative_sampling(ori_adj,idx_test_positive,idx_train)
+    idx_train, idx_val = train_test_split(idx_train,test_size=0.05, random_state=1)       
+    
+    return torch.FloatTensor(ori_adj), torch.FloatTensor(train_adj), torch.FloatTensor(features), torch.LongTensor(idx_train), torch.LongTensor(idx_val), torch.LongTensor(idx_test)
 
+def load_cora_data(break_portion,path="./data/cora/", dataset="cora"):
+    """Load Cora network, generate training, validation and test set for link prediction task"""
+    print('Loading {} dataset...'.format(dataset))
+    
+    #load graph
+    idx_features_labels = np.genfromtxt("{}{}.content".format(path, dataset),
+                                        dtype=np.dtype(str))
+    features = sp.csr_matrix(idx_features_labels[:, 1:-1], dtype=np.float32)
+    labels = encode_onehot(idx_features_labels[:, -1])
+    idx = np.array(idx_features_labels[:, 0], dtype=np.int32)
+    idx_map = {j: i for i, j in enumerate(idx)}
+    edges_unordered = np.genfromtxt("{}{}.cites".format(path, dataset),
+                                    dtype=np.int32)
+    edges = np.array(list(map(idx_map.get, edges_unordered.flatten())),
+                     dtype=np.int32).reshape(edges_unordered.shape)
+    adj = sp.coo_matrix((np.ones(edges.shape[0]), (edges[:, 0], edges[:, 1])),
+                        shape=(features.shape[0], features.shape[0]),
+                        dtype=np.float32)
+    adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
 
-
-args = parser.parse_args()
-args.cuda = args.cuda and torch.cuda.is_available()
-print(args)
-
-np.random.seed(args.seed)
-torch.manual_seed(args.seed)
-if args.cuda:
-    torch.cuda.manual_seed(args.seed)
-
-# Load data
-datasetName = 'cora'
-ori_adj, adj, features,idx_train, idx_val, idx_test = load_cora_data(args.breakPortion)
-#datasetName = 'pubmed'
-#ori_adj, adj, features, idx_train, idx_val, idx_test = load_pubmed_data(args.breakPortion)
-
-
-node_num = features.numpy().shape[0]
-sampleSize = map(int, args.sampleSize.split(','))
-model = GAT(K = 8, node_num = features.numpy().shape[0],nfeat=features.numpy().shape[1],nhid=args.hidden,nclass=2,sampleSize = sampleSize, dropout=args.dropout,trainAttention=args.trainAttention)
-
-
-optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-
-if torch.cuda.device_count() > 1:
-    print("Let's use multi-GPUs!")
-    model = nn.DataParallel(model)
-else:
-    print("Only use one GPU")
-
-labels = adj.view(node_num*node_num).type_as(idx_train)
-labels = labels.type(torch.FloatTensor)
-ori_labels = ori_adj.view(node_num*node_num).type_as(idx_train)
-ori_labels = ori_labels.type(torch.FloatTensor)
-criterion = nn.BCELoss() 
-adj,ori_labels = Variable(adj), Variable(ori_labels) 
-features = Variable(features)
-labels = Variable(labels)
-
-if args.cuda:
-    model = model.cuda()
-    features = features.cuda()
-    adj = adj.cuda()
-    labels = labels.cuda()
-    idx_train = idx_train.cuda()
-    idx_val = idx_val.cuda()
-    idx_test = idx_test.cuda()
-    criterion = criterion.cuda()
-    ori_labels = ori_labels.cuda()
-
-writer = SummaryWriter(comment = 'ori_0.1_hidden_{}_lr_{}_#batch_{}_SampleSize_{}_testBatchSize_{}'.format(args.hidden , args.lr , args.batchSize , args.sampleSize,args.testBatchSize))
+    ori_adj = copy.deepcopy(adj.todense())   
+    features = np.array(features.todense())  
+    
+    #generate train,validation and test set 
+    train_adj,idx_test_positive = break_links(adj.todense(),break_portion)
+    idx_train = negative_sampling(train_adj,idx_test_positive) 
+    idx_test = test_negative_sampling(ori_adj,idx_test_positive,idx_train)
+    idx_train, idx_val = train_test_split(idx_train,test_size=0.05, random_state=1)   
+    
+    
+    return torch.FloatTensor(ori_adj), torch.FloatTensor(train_adj), torch.FloatTensor(features), torch.LongTensor(idx_train), torch.LongTensor(idx_val), torch.LongTensor(idx_test)
 
 
-train_batches = iterate_return(idx_train, args.sampleSize,labels,adj, args.batchSize)
-val_batches   = iterate_return(idx_val, args.sampleSize, labels, adj, args.batchSize )
-test_batches  = sample_test_batch(idx_test, args.sampleSize,adj, args.testBatchSize)
-def train(epoch):
-    t = time.time()
-    model.train()
-    optimizer.zero_grad()
-    batch = 0; loss_train_sum= 0; accu_train_sum = 0;loss_val_sum= 0; accu_val_sum = 0
-    _idx_val, _idx_neighbor_val, _idx_neighbor2_val, _targets_val = val_batches[0]
-    for epoch_cnt,i in enumerate(train_batches):
-        _idx_train, _idx_neighbor_train, _idx_neighbor2_train, _targets_train = i
-        output = model(torch.index_select(features,0,_idx_train),torch.index_select(features,0,_idx_neighbor_train),torch.index_select(features,0,_idx_neighbor2_train))      
-        loss_train = criterion(output, _targets_train.type(torch.cuda.FloatTensor))
-        acc_train = accuracy(output, _targets_train.type(torch.cuda.FloatTensor))
-        model.train()
-        optimizer.zero_grad()
-        loss_train.backward()
-        optimizer.step()
-        loss_train_sum += loss_train.data[0]; accu_train_sum += acc_train.data[0]
-        batch += 1
+def break_links(adj,break_portion):
+    idx_test = []
+    N = np.shape(adj)[0]
+    cnt = 0
+    break_num = math.ceil(break_portion*np.sum(adj)/2)    
+    while cnt < int(break_num):
+        x_cor = random.randint(0,N-1)
+        y_cor = random.randint(0,N-1)
+        if adj[x_cor,y_cor] == 1 and np.sum(adj[x_cor,:])!=1 and np.sum(adj[y_cor,:])!=1:
+            idx_test.extend([x_cor*N + y_cor,y_cor*N + x_cor])
+            adj[x_cor,y_cor] = adj[y_cor,x_cor] =0
+            cnt += 1    
+    return adj, idx_test
+    
+def negative_sampling(adj, idx_test):
+    # one positive combined with one negative, sample list for train
+    # highOrder_adj represent nodes which have no connection in high order
+    idx_train_positive = np.array(list(np.where(np.array(adj).flatten() !=0))[0])
+    train_positive_num = idx_train_positive.shape[0]    
+    zero_location = list(np.where(np.array(adj).flatten() == 0))[0]
+    temp = np.isin(zero_location, idx_test)    
+    idx_train_negative = np.random.choice(zero_location[np.where(temp == False)], size = train_positive_num, replace=False)
+    idx_train = np.hstack((idx_train_negative, idx_train_positive))
+    np.random.shuffle(idx_train)
+    print('train negative sampling done')
+    return idx_train
 
-    if not args.fastmode:
-        model.eval()
-        output = model(torch.index_select(features,0,_idx_val),torch.index_select(features,0,_idx_neighbor_val),torch.index_select(features,0,_idx_neighbor2_val))
-        loss_val = criterion(output, _targets_val.type(torch.cuda.FloatTensor))
-        acc_val = accuracy(output, _targets_val.type(torch.cuda.FloatTensor))
-        loss_val_sum += loss_val.data[0];accu_val_sum += acc_val.data[0]
 
-    if (epoch +1)%10 ==0:
-        test(epoch,test_batches)
+def _test_negative_sampling(adj,idx_test_list_positive,idx_train_noTensor):
+    
+    N = np.shape(adj)[0]
+    for i in range(len(idx_test_list_positive)):
+            z = random.randint(0,N*N-1)
+            while highOrder_adj[z] != 0 or z in idx_train_noTensor:
+                z = random.randint(0,N*N-1)
+            idx_test_list_positive.append(z)
+    random.shuffle(idx_test_list_positive)
+    idx_test_list = idx_test_list_positive 
+    print 'test negative sampling done'
+    return idx_test_list
+    
+def test_negative_sampling(adj,idx_test_positive,idx_train):
+    idx_test_positive = np.array(idx_test_positive)
+    test_positive_num = idx_test_positive.shape[0]
+    adj = adj + np.eye(adj.shape[0])
+    zero_location = list(np.where(np.array(adj).flatten() == 0))[0]
+    choice_pos = np.isin(zero_location,idx_train)
+    idx_test_negative = np.random.choice(zero_location[np.where(choice_pos == False)], size = test_positive_num, replace=False)
+    idx_test = np.hstack((idx_test_positive, idx_test_negative ))
+    np.random.shuffle(idx_test)
+    return idx_test
 
-    print('Epoch: {:04d}'.format(epoch+1),
-              'loss_train: {:.4f}'.format(loss_train_sum/float(batch)),
-              'acc_train: {:.4f}'.format(accu_train_sum/float(batch)),
-              'loss_val: {:.4f}'.format(loss_val.data[0]),
-              'acc_val: {:.4f}'.format(acc_val.data[0]),
-              'time: {:.4f}s'.format(time.time() - t))
-    writer.add_scalars('loss',{'train_loss':loss_train_sum / float(batch),'val_loss':loss_val_sum/float(batch)},epoch)
-    writer.add_scalars('acc',{'train_acc':accu_train_sum / float(batch) , 'val_acc':accu_val_sum / float(batch)},epoch)
+def accuracy(output, labels):
+    assert output.size() == labels.size()
+    output = output > 0.5
+    preds = output.type_as(labels)
+    correct = preds.eq(labels).double()
+    correct = correct.sum()
+    return correct / float(len(labels))
 
-    if args.cuda == True:
-        return epoch+1, loss_train_sum/float(batch), loss_val.data[0], accu_train_sum/float(batch), acc_val.data[0]
-    else:
-        return epoch+1, loss_train.data.numpy(), loss_val.data.numpy(), acc_train.data.numpy(), acc_val.data.numpy()
-
-def test(epoch,test_batches):
-    model.eval()
-    batch = 0; loss_test_sum= 0; accu_test_sum = 0;f1_score_sum= 0; auc_sum = 0
-    for i in test_batches:
-        _idx_test, _idx_neighbor_test,_idx_neighbor2_test,targets  = i
-        output = model(torch.index_select(features,0,_idx_test),torch.index_select(features,0,_idx_neighbor_test),torch.index_select(features,0,_idx_neighbor2_test))        
-        loss_test = criterion(output, torch.index_select(ori_labels,0,targets))
-        acc_test = accuracy(output,torch.index_select(ori_labels,0,targets).type(torch.cuda.FloatTensor))
-        f1_score = score_f1(output,torch.index_select(ori_labels,0,targets).type(torch.cuda.FloatTensor))
-        try:
-            auc = roc_auc_score(torch.index_select(ori_labels,0,targets).cpu().data.numpy(),output.cpu().data.numpy())
-        except:
-            auc = 1
-
-        loss_test_sum += loss_test.data[0]
-        accu_test_sum += acc_test.data[0]
-        f1_score_sum += f1_score
-        auc_sum += auc
-        batch += 1
-
-    print("Test set results:",
-          "loss= {:.4f}".format(loss_test_sum/float(batch)),
-          "accuracy= {:.4f}".format(accu_test_sum/float(batch)),
-          "f1_score = {:.4f}".format(f1_score_sum/float(batch)),
-          "auc = {:.4f}".format(auc_sum/float(batch)))
-
-    writer.add_scalar('loss_test' , loss_test_sum/float(batch),epoch)
-    writer.add_scalar('acc_test' , accu_test_sum/float(batch),epoch)
-    writer.add_scalar('f1_score' , f1_score_sum/float(batch),epoch)
-    writer.add_scalar('auc' , auc_sum/float(batch),epoch)
-
-def link_prediction():
-    model.eval()
-    output = model(features, adj)
-    accu = link_prediction_accuracy_2label(ori_adj, adj, output)
-    print ('link prediction accuracy is {}'.format(accu))
-
-# Train model
-t_total = time.time()
-loss_values = []
-bad_counter = 0
-best = args.epochs + 1
-best_epoch = 0
-for epoch in range(args.epochs):
-    epoch, loss_train, loss_val, acc_train, acc_val = train(epoch)
-    loss_values.append(loss_val)
-    torch.save(model.state_dict(), '{}.pkl'.format(epoch))
-    torch.save(model, '{}.modelPkl'.format(epoch))
-    if loss_values[-1] < best:
-        best = loss_values[-1]
-        best_epoch = epoch
-        bad_counter = 0
-    else:
-        bad_counter += 1
-
-    if bad_counter == args.patience:
-        break
-
-    files = glob.glob('./Patience/*.pkl')
-    for file in files:
-        epoch_nb = int(file.split('.')[0])
-        if epoch_nb < best_epoch:
-            os.remove(file)
-
-files = glob.glob('./Patience/*.pkl')
-for file in files:
-    epoch_nb = int(file.split('.')[0])
-    if epoch_nb > best_epoch:
-        os.remove(file)
-
-print("Optimization Finished!")
-print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
-
-# Restore best model
-print('Loading {}th epoch'.format(best_epoch))
-model.load_state_dict(torch.load('{}.pkl'.format(best_epoch)))
-model_dict = model.state_dict()
-test(epoch,test_batches)
-
-#export scalar data to JSON for external processing
-writer.export_scalars_to_json("./all_scalars.json")
-writer.close()
-
+def score_f1(output, labels):
+    assert output.size() == labels.size()
+    output = output > 0.5
+    preds = output.type_as(labels)
+    correct = preds.eq(labels).double()
+    correct = correct.sum()
+    label = labels.cpu().data.numpy()
+    pred = preds.cpu().data.numpy()
+    score = f1_score(label,pred,average='micro')
+    return score
