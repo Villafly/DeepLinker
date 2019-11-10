@@ -53,7 +53,7 @@ parser.add_argument('--sampleSize', type = str, default= '20,20',
 parser.add_argument('--breakPortion', type = float, default= 0.1,
                     help='set the break portion.')
 parser.add_argument('--patience', type = int, default=50, help='Patience')
-parser.add_argument('--trainAttention', type = int, default= 1,
+parser.add_argument('--trainAttention', action='store_true', default=True,
                     help='Train attention weight or not')
 
 
