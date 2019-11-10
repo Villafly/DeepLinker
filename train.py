@@ -53,8 +53,8 @@ parser.add_argument('--sampleSize', type = str, default= '20,20',
 parser.add_argument('--breakPortion', type = float, default= 0.1,
                     help='set the break portion.')
 parser.add_argument('--patience', type = int, default=50, help='Patience')
-#parser.add_argument('--attentionWeight', type = int, default= 1,
-#                    help='Train attention weight or not')
+parser.add_argument('--trainAttention', type = int, default= 1,
+                    help='Train attention weight or not')
 
 
 
@@ -70,11 +70,12 @@ if args.cuda:
 # Load data
 datasetName = 'cora'
 ori_adj, adj, features,idx_train, idx_val, idx_test = load_cora_data(args.breakPortion)
+#ori_adj, adj, features, labels, idx_train, idx_val, idx_test = load_pubmed_data(args.breakPor)
 
 
 node_num = features.numpy().shape[0]
 sampleSize = map(int, args.sampleSize.split(','))
-model = GAT(K = 8, node_num = features.numpy().shape[0],nfeat=features.numpy().shape[1],nhid=args.hidden,nclass=2,sampleSize = sampleSize, dropout=args.dropout)
+model = GAT(K = 8, node_num = features.numpy().shape[0],nfeat=features.numpy().shape[1],nhid=args.hidden,nclass=2,sampleSize = sampleSize, dropout=args.dropout,trainAttention=args.trainAttention)
 
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
