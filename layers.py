@@ -36,13 +36,14 @@ class GraphConvolution(Module):
     Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
     """
 
-    def __init__(self,K,node_num, in_features, out_features, sample_size,bias='False',cat ='True'):
+    def __init__(self,K,node_num, in_features, out_features, sample_size,bias='False',cat ='True',trainAttention=1):
         super(GraphConvolution, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.sample_size = sample_size
         self.node_num = node_num
         self.K = K 
+        self.trainAttention = 1
         self.leakyRelu = nn.LeakyReLU(0.2) 
         self.cat = cat
         self.weight = Parameter(torch.Tensor(K,in_features, out_features))
@@ -68,7 +69,7 @@ class GraphConvolution(Module):
         alpha = F.softmax(dense.view(-1,self.sample_size), dim = 1)
         dense = alpha.view(-1,1)
         combination_slices =  dense.repeat(1,self.out_features)
-        return alpha,combination_slices
+        return combination_slices
     
     def cal_node_feature(self,adj_alpha,tail_support):
         unsum_feature = torch.mul(adj_alpha,tail_support)
@@ -83,10 +84,10 @@ class GraphConvolution(Module):
         for k in range(self.K):
             head_support = torch.mm(input_head, self.weight[k])
             tail_support = torch.mm(input_tail, self.weight[k])
-            alpha,alpha_matrix = self.cal_alpha_matrix(k,head_support,tail_support)
-            x,y =  alpha_matrix.size()
-            alpha_matrix_extra = Variable((torch.ones(x,y)).cuda())            
-            alpha_matrix = alpha_matrix_extra
+            alpha_matrix = self.cal_alpha_matrix(k,head_support,tail_support)
+            if trainAttention == 0:
+                x,y =  alpha_matrix.size()
+                alpha_matrix = Variable((torch.ones(x,y)).cuda())            
             node_features = self.cal_node_feature(alpha_matrix,tail_support)
             if self.cat == 'True': 
                  _x = F.relu(node_features)
