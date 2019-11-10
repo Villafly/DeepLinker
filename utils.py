@@ -14,7 +14,7 @@ def encode_onehot(labels):
     labels_onehot = np.array(list(map(classes_dict.get, labels)),
                              dtype=np.int32)
     return labels_onehot
-def load_pubmed_data(breakPortion,path="./data/pubmed/", dataset="pubmed"):
+def load_pubmed_data(breakPortion,path="../data/pubmed/", dataset="pubmed"):
     names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
     objects = []
     for i in range(len(names)):
@@ -39,15 +39,22 @@ def load_pubmed_data(breakPortion,path="./data/pubmed/", dataset="pubmed"):
     temp_ori_adj = copy.deepcopy(adj)
     ori_adj = (adj)
     features = (np.array(features))
-    adj,idx_test_list_positive = random_breakLink(adj)
-    print('random_break finished')
-    idx_train_noTensor = negative_sampling(adj,idx_test_list_positive)
+    adj,idx_test_list_positive = random_breakLink(adj,breakPortion)     
+    idx_train_noTensor = negative_sampling(adj,idx_test_list_positive)    
     train_num = len(idx_train_noTensor)
-    idx_train = (idx_train_noTensor[0:int(np.floor(train_num))])
-    idx_val = (idx_train_noTensor[int(np.floor(train_num*0.9)):])
-    idx_test_list = test_negative_sampling(temp_ori_adj,idx_test_list_positive,idx_train_noTensor)
-    idx_test = idx_test_list
-    return torch.FloatTensor(ori_adj), torch.FloatTensor(adj), torch.FloatTensor(features), torch.LongTensor(idx_train), torch.LongTensor(idx_val), torch.LongTensor(idx_test)
+    split_point = int(math.floor(train_num * 0.95))
+    if divmod(split_point, 2)[1] != 0:
+        split_point += 1
+    idx_train = torch.LongTensor(idx_train_noTensor[0:split_point])
+    idx_val = torch.LongTensor(idx_train_noTensor[split_point:])
+    idx_test_list = test_negative_sampling(ori_adj,idx_test_list_positive,idx_train_noTensor)
+    idx_test = torch.LongTensor(idx_test_list)
+
+    ori_adj = torch.FloatTensor(ori_adj)   
+    features = torch.FloatTensor(features) 
+    adj = torch.FloatTensor(adj)
+    
+    return ori_adj, adj, features, labels, idx_train, idx_val, idx_test
 
 def load_cora_data(break_portion,path="./data/cora/", dataset="cora"):
     """Load Cora network, generate training, validation and test set for link prediction task"""
