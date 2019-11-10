@@ -68,9 +68,9 @@ if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
 # Load data
-datasetName = 'cora'
-ori_adj, adj, features,idx_train, idx_val, idx_test = load_cora_data(args.breakPortion)
-#ori_adj, adj, features, labels, idx_train, idx_val, idx_test = load_pubmed_data(args.breakPor)
+datasetName = 'pubmed'
+#ori_adj, adj, features,idx_train, idx_val, idx_test = load_cora_data(args.breakPortion)
+ori_adj, adj, features, labels, idx_train, idx_val, idx_test = load_pubmed_data(args.breakPortion)
 
 
 node_num = features.numpy().shape[0]
