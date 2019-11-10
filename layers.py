@@ -85,7 +85,7 @@ class GraphConvolution(Module):
             head_support = torch.mm(input_head, self.weight[k])
             tail_support = torch.mm(input_tail, self.weight[k])
             alpha_matrix = self.cal_alpha_matrix(k,head_support,tail_support)
-            if trainAttention == 0:
+            if trainAttention == 'False':
                 x,y =  alpha_matrix.size()
                 alpha_matrix = Variable((torch.ones(x,y)).cuda())            
             node_features = self.cal_node_feature(alpha_matrix,tail_support)
